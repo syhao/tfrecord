@@ -13,10 +13,10 @@ def read_and_decode(record_queue):
     for i in range(100):
         _,serialized_example=reader.read(record_queue)
         features=tf.parse_single_example(serialized_example,features={'wav_raw': tf.FixedLenFeature([], tf.string),'shape': tf.FixedLenFeature([2], tf.int64),} )
-        shape = tf.cast(features['shape'], tf.int64)
+        shape = tf.cast(features['shape'], tf.int32)
         get_wave = tf.decode_raw(features['wav_raw'], tf.float32)
     #get_wave.set_shape(features['shape'])
-        get_wave = tf.reshape(get_wave,[161,-1])
+        get_wave = tf.reshape(get_wave,tf.pack([shape[0],shape[1]]))
         records.append(get_wave)
     return records
 
@@ -34,8 +34,10 @@ def decode_tfrecord(file_path):
 
     tf.train.start_queue_runners(sess=sess)
     wavbatch = sess.run([get_wave])
+    print wavbatch
     for i in range(100):
         print wavbatch[0][i].shape
+
 
 
 def _bytes_feature(value):
