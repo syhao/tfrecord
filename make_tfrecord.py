@@ -7,22 +7,29 @@ import librosa
 
 
 
-def read_and_decode(record_queue):
+def read_and_decode(record_queue,batch_size):
     reader=tf.TFRecordReader()
     records=[]
-    for i in range(100):
+    maxlen=0
+    for i in range(batch_size):
         _,serialized_example=reader.read(record_queue)
         features=tf.parse_single_example(serialized_example,features={'wav_raw': tf.FixedLenFeature([], tf.string),'shape': tf.FixedLenFeature([2], tf.int64),} )
         shape = tf.cast(features['shape'], tf.int32)
         get_wave = tf.decode_raw(features['wav_raw'], tf.float32)
     #get_wave.set_shape(features['shape'])
         get_wave = tf.reshape(get_wave,tf.pack([shape[0],shape[1]]))
+        if shape[1]>=maxlen:
+            maxlen=shape[1]
         records.append(get_wave)
-    return records
+    x = np.zeros(batch_size,shape[0],maxlen)
+    for i in range(batch_size):
+        x[i,:,:]=records[i]
 
-def decode_tfrecord(file_path):
+    return x
+
+def decode_tfrecord(file_path,batch_size=100):
     record_queue=tf.train.string_input_producer([file_path])
-    get_wave=read_and_decode(record_queue)
+    get_wave=read_and_decode(record_queue,batch_size)
     #get_wave = tf.train.shuffle_batch([get_wave],
     #                                    batch_size=1,
     #                                    num_threads=2,
@@ -35,8 +42,8 @@ def decode_tfrecord(file_path):
     tf.train.start_queue_runners(sess=sess)
     wavbatch = sess.run([get_wave])
     print wavbatch
-    for i in range(100):
-        print wavbatch[0][i].shape
+    # for i in range(batch_size):
+    #     print wavbatch[0][i].shape
 
 
 
@@ -82,12 +89,12 @@ def get_spectrogram(file_name, step=10, window=20, max_freq=None, eps=1e-14):
             audio, fft_length=fft_length, sample_rate=samplerate,
             hop_length=hop_length)
         ind = np.where(freqs <= max_freq)[0][-1] + 1
-    return np.transpose(np.log(pxx[:, :ind] + eps))
+    return np.transpose(np.log(pxx[:ind, :] + eps))
 
 
-def spectrogram(data, hop_length, sample_rate, fft_length):
+def spectrogram(data, fft_length, sample_rate, hop_length):
     assert not np.iscomplexobj(data)
-    window = np.hanning(fft_length)
+    window = np.hanning(fft_length)[:,None]
     window_nornal = np.sum(window ** 2)
     scale = window_nornal * sample_rate
     trunc_length = (len(data) - fft_length) % hop_length
@@ -96,7 +103,7 @@ def spectrogram(data, hop_length, sample_rate, fft_length):
     nstrides = (x.strides[0], x.strides[0] * hop_length)
     x = as_strided(x, shape=nshape, strides=nstrides)
     assert np.all(x[:, 1] == data[hop_length:(hop_length + fft_length)])
-    x=np.transpose(x)
+    print(x.shape)
     x = np.fft.rfft(x * window, axis=0)
     x = np.absolute(x) ** 2
     x[1:-1, :] *= (2.0 / scale)
@@ -109,8 +116,8 @@ if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument('wavfiles_path',type=str,help="wav files path to generate tfrecords")
     parser.add_argument('output_tfrecorder_name',type=str,help='file name to save tf record')
-    #args = parser.parse_args()
-    #create_tfrecord(args.wavfiles_path,args.output_tfrecorder_name)
-    decode_tfrecord("./records")
+    args = parser.parse_args()
+    create_tfrecord(args.wavfiles_path,args.output_tfrecorder_name)
+    #decode_tfrecord("./records")
 
 
